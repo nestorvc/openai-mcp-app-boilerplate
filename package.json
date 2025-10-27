@@ -1,0 +1,33 @@
+{
+  "name": "openai-mcp-app-boilerplate",
+  "version": "1.0.0",
+  "description": "A clean boilerplate for OpenAI MCP Apps with Node.js server",
+  "main": "server/src/server.ts",
+  "scripts": {
+    "build": "tsx ./build.mts",
+    "dev": "vite --config vite.config.mts",
+    "server": "cd server && pnpm start"
+  },
+  "keywords": ["openai", "mcp", "chatgpt", "apps"],
+  "author": "",
+  "license": "MIT",
+  "packageManager": "pnpm@10.13.1",
+  "devDependencies": {
+    "@tailwindcss/vite": "^4.1.11",
+    "@types/node": "^24.3.0",
+    "@vitejs/plugin-react": "^4.5.2",
+    "autoprefixer": "10.4.21",
+    "fast-glob": "^3.3.3",
+    "postcss": "8.5.6",
+    "tailwindcss": "4.1.11",
+    "tsx": "^4.20.4",
+    "typescript": "^5.9.2",
+    "vite": "^7.1.1"
+  },
+  "dependencies": {
+    "@types/react": "^19.1.12",
+    "@types/react-dom": "^19.1.9",
+    "react": "^19.1.1",
+    "react-dom": "^19.1.1"
+  }
+}
