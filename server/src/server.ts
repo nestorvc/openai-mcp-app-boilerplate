@@ -191,7 +191,7 @@ function createServerInstance(): McpServer {
           },
         ],
           structuredContent: {                                              // Structured data that is used to hydrate your component, e.g. the tracks for a playlist, the homes for a realtor app, the tasks for a kanban app. ChatGPT injects this object into your iframe as window.openai.toolOutput, so keep it scoped to the data your UI needs. The model reads these values and may narrate or summarize them. { message }
-            message,
+            // message,                                                     // The message to display with the widget.
         },
         _meta: {                                                            // Arbitrary JSON passed only to the component. Use it for data that should not influence the model’s reasoning, like the full set of locations that backs a dropdown. _meta is never shown to the model. { messageLen: message.length }
           messageLen: message.length,
@@ -223,7 +223,8 @@ async function handleSseRequest(res: ServerResponse) {
 
   transport.onclose = async () => {
     sessions.delete(sessionId);
-    await server.close();
+    // Don't call server.close() here - it causes a circular call with transport.close()
+    // The SDK handles cleanup internally
   };
 
   transport.onerror = (error) => {
