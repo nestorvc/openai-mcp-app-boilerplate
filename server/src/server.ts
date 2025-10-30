@@ -175,6 +175,7 @@ function createServerInstance(): McpServer {
       description: "Display a todo list widget",
       inputSchema: {
         message: z.string().describe("A message to display with the widget."),
+        userId: z.string().optional().describe("Optional user ID for personalization"),
       },
       _meta: {
         "openai/outputTemplate": todoUri,
@@ -182,19 +183,185 @@ function createServerInstance(): McpServer {
         "openai/toolInvocation/invoked": "Todo list displayed",
       },
     },
-    async ({ message }: { message: string }) => {
+    async ({ message, userId }: { message: string; userId?: string }) => {
+      // Sample todo data - in a real app, this would come from a database
+      const sampleTodos = [
+        {
+          id: "1",
+          title: "Learn about ChatGPT Apps SDK",
+          isComplete: false,
+          note: "Study the window.openai API integration",
+          dueDate: "2024-01-15"
+        },
+        {
+          id: "2", 
+          title: "Build an interactive widget",
+          isComplete: true,
+          note: "Implement two-way communication with ChatGPT",
+          dueDate: "2024-01-10"
+        },
+        {
+          id: "3",
+          title: "Deploy to production",
+          isComplete: false,
+          note: "Test with real ChatGPT integration",
+          dueDate: null
+        }
+      ];
+
       return {
-        content: [                                                          // Optional free-form text (Markdown or plain strings) that the model receives verbatim.
+        content: [
           {
             type: "text",
-            text: "Rendered a todo list!",
+            text: `Rendered a todo list! ${message}`,
           },
         ],
-          structuredContent: {                                              // Structured data that is used to hydrate your component, e.g. the tracks for a playlist, the homes for a realtor app, the tasks for a kanban app. ChatGPT injects this object into your iframe as window.openai.toolOutput, so keep it scoped to the data your UI needs. The model reads these values and may narrate or summarize them. { message }
-            // message,                                                     // The message to display with the widget.
+        structuredContent: {
+          // This data is injected into your component as window.openai.toolOutput
+          lists: [
+            {
+              id: "main-list",
+              title: "My Tasks",
+              isCurrentlyOpen: true,
+              todos: sampleTodos
+            }
+          ],
+          message,
+          userId: userId || "anonymous"
         },
-        _meta: {                                                            // Arbitrary JSON passed only to the component. Use it for data that should not influence the model’s reasoning, like the full set of locations that backs a dropdown. _meta is never shown to the model. { messageLen: message.length }
+        _meta: {
           messageLen: message.length,
+          totalTodos: sampleTodos.length,
+          completedTodos: sampleTodos.filter(t => t.isComplete).length
+        },
+      };
+    }
+  );
+
+  // NEW: Register tool for refreshing todos from component
+  // This demonstrates how components can call server tools
+  server.registerTool(
+    "refresh-todos",
+    {
+      title: "Refresh Todo List",
+      description: "Refresh the todo list data from the server",
+      inputSchema: {
+        listId: z.string().optional().describe("ID of the list to refresh"),
+        userId: z.string().optional().describe("User ID for personalization"),
+      },
+      _meta: {
+        "openai/toolInvocation/invoking": "Refreshing todo list data",
+        "openai/toolInvocation/invoked": "Todo list refreshed",
+      },
+    },
+    async ({ listId, userId }: { listId?: string; userId?: string }) => {
+      // In a real app, this would fetch fresh data from a database
+      const refreshedTodos = [
+        {
+          id: "1",
+          title: "Learn about ChatGPT Apps SDK",
+          isComplete: false,
+          note: "Study the window.openai API integration",
+          dueDate: "2024-01-15"
+        },
+        {
+          id: "2", 
+          title: "Build an interactive widget",
+          isComplete: true,
+          note: "Implement two-way communication with ChatGPT",
+          dueDate: "2024-01-10"
+        },
+        {
+          id: "3",
+          title: "Deploy to production",
+          isComplete: false,
+          note: "Test with real ChatGPT integration",
+          dueDate: null
+        },
+        {
+          id: "4",
+          title: "Add new feature",
+          isComplete: false,
+          note: "This todo was added during refresh",
+          dueDate: "2024-01-20"
+        }
+      ];
+
+      return {
+        content: [
+          {
+            type: "text",
+            text: `Refreshed todo list data. Found ${refreshedTodos.length} todos.`,
+          },
+        ],
+        structuredContent: {
+          lists: [
+            {
+              id: listId || "main-list",
+              title: "My Tasks",
+              isCurrentlyOpen: true,
+              todos: refreshedTodos
+            }
+          ],
+          refreshedAt: new Date().toISOString(),
+          userId: userId || "anonymous"
+        },
+        _meta: {
+          totalTodos: refreshedTodos.length,
+          refreshedAt: new Date().toISOString()
+        },
+      };
+    }
+  );
+
+  // NEW: Register tool for saving todo state
+  // This demonstrates how components can persist data back to the server
+  server.registerTool(
+    "save-todo-state",
+    {
+      title: "Save Todo State",
+      description: "Save the current state of the todo list",
+      inputSchema: {
+        todos: z.array(z.object({
+          id: z.string(),
+          title: z.string(),
+          isComplete: z.boolean(),
+          note: z.string().optional(),
+          dueDate: z.string().optional()
+        })).describe("Array of todo items to save"),
+        listId: z.string().optional().describe("ID of the list being saved"),
+        userId: z.string().optional().describe("User ID for personalization"),
+      },
+      _meta: {
+        "openai/toolInvocation/invoking": "Saving todo list state",
+        "openai/toolInvocation/invoked": "Todo list state saved",
+      },
+    },
+    async ({ todos, listId, userId }: { 
+      todos: Array<{id: string; title: string; isComplete: boolean; note?: string; dueDate?: string}>;
+      listId?: string;
+      userId?: string;
+    }) => {
+      // In a real app, this would save to a database
+      console.log(`Saving ${todos.length} todos for user ${userId || 'anonymous'}`);
+      
+      return {
+        content: [
+          {
+            type: "text",
+            text: `Saved ${todos.length} todos successfully.`,
+          },
+        ],
+        structuredContent: {
+          success: true,
+          savedTodos: todos.length,
+          listId: listId || "main-list",
+          userId: userId || "anonymous",
+          savedAt: new Date().toISOString()
+        },
+        _meta: {
+          savedTodos: todos.length,
+          savedAt: new Date().toISOString()
         },
       };
     }

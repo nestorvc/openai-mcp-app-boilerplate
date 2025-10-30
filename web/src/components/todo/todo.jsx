@@ -1,4 +1,4 @@
-import React, { useRef, useState, useEffect, useMemo, forwardRef } from "react";
+import React, { useRef, useState, useEffect, useMemo, useCallback, forwardRef } from "react";
 import {
   AnimatePresence,
   motion,
@@ -10,7 +10,19 @@ import { List, GripVertical, Plus, Calendar, EllipsisVertical, Trash2 } from "lu
 // NEW: react-datepicker import (drop-in replacement for native date picker)
 import DatePicker from "react-datepicker";
 
-const todoData = window.todoData || [];
+// NEW: Import our custom hooks for window.openai API integration
+import { 
+  useToolOutput, 
+  useToolInput, 
+  useWidgetState, 
+  useCallTool, 
+  useSendFollowUpMessage,
+  useRequestDisplayMode,
+  useOpenAIGlobals 
+} from "../../hooks/useOpenAI";
+
+// OLD: Static data access (replaced with window.openai API)
+// const todoData = window.todoData || [];
 
 /* -------------------------- Inject datepicker CSS -------------------------- */
 /* Keeps look aligned with the app: small font, black/gray, soft border/shadow,
@@ -149,7 +161,7 @@ function toYMD(date) {
 }
 
 /** Clone seed, adding defaults + stable ids. Keeps `isCurrentlyOpen` if present. */
-function buildInitialData() {
+function buildInitialData(todoData) {
   const addTodoDefaults = (t) => ({
     id: t.id ?? uid(),
     isComplete: !!t.isComplete,
@@ -304,12 +316,18 @@ function TodoListItem({
   const noteRef = useRef(null);
   const menuRef = useRef(null);
 
-  useClickOutside(containerRef, () => {
+  const handleContainerClickOutside = useCallback(() => {
     setIsFocused(false);
     setFocusTarget(null);
     setMenuOpen(false);
-  });
-  useClickOutside(menuRef, () => setMenuOpen(false));
+  }, []);
+
+  const handleMenuClickOutside = useCallback(() => {
+    setMenuOpen(false);
+  }, []);
+
+  useClickOutside(containerRef, handleContainerClickOutside);
+  useClickOutside(menuRef, handleMenuClickOutside);
 
   /* Programmatic focusing */
   useEffect(() => {
@@ -332,8 +350,6 @@ function TodoListItem({
     } catch {}
   };
 
-  // Create a unique, per-row portal target right under the calendar button group.
-  const portalId = useMemo(() => `dp-portal-${item.id}`, [item.id]);
 
   // Invisible input used only as the anchor element for Popper.
   const HiddenAnchorInput = forwardRef(function HiddenAnchorInput(props, ref) {
@@ -488,7 +504,7 @@ function TodoListItem({
             {!dateLabel && (
               <motion.button
                 type="button"
-                animate={{ opacity: isHovered ? 1 : 0 }}
+                animate={{ opacity: isHovered ? 1 : 0.6 }}
                 onClick={openReactDatePicker}
                 aria-label="Edit due date"
                 className="p-1 rounded-md hover:bg-black/5"
@@ -508,10 +524,7 @@ function TodoListItem({
               </button>
             )}
 
-            {/* Absolutely positioned portal directly beneath the controls */}
-            <div id={portalId} className="absolute left-0 top-full mt-1 z-[70]" />
-
-            {/* Hidden input anchors Popper; calendar content portals into the div above */}
+            {/* Hidden input anchors Popper */}
             <DatePicker
               ref={datepickerRef}
               selected={selectedDate}
@@ -531,8 +544,7 @@ function TodoListItem({
               ]}
               /* Use our custom header so we can show "Prev" and "Next" at the extremes */
               renderCustomHeader={renderHeader}
-              // NOTE: no withPortal — we portal into our local absolute container instead
-              portalId={portalId}
+              withPortal
               onClickOutside={() => datepickerRef.current?.setOpen(false)}
             />
           </div>
@@ -791,12 +803,59 @@ function TodoListGroup({
 /* ================================ App =================================== */
 export function App() {
   const ref = useRef(null);
-  const initialData = buildInitialData();
+  
+  // NEW: Use window.openai API hooks for data and state management
+  // This replaces the old static window.todoData approach
+  
+  // Get data from MCP server tool output (replaces window.todoData)
+  const toolOutput = useToolOutput();
+  const toolInput = useToolInput();
+  
+  // Get theme and layout information from ChatGPT
+  const { theme, maxHeight, displayMode } = useOpenAIGlobals();
+  
+  // Persist widget state across sessions (visible to ChatGPT)
+  const [widgetState, setWidgetState] = useWidgetState({ 
+    lastUpdated: new Date().toISOString(),
+    totalTodos: 0 
+  });
+  
+  // Tools for communicating with the MCP server
+  const { callTool, isLoading: isServerLoading } = useCallTool();
+  const sendFollowUpMessage = useSendFollowUpMessage();
+  const requestDisplayMode = useRequestDisplayMode();
+  
+  // Build initial data from tool output (replaces static todoData)
+  const initialData = useMemo(() => {
+    // Get todo data from MCP server response
+    const todoData = toolOutput?.todos || toolOutput?.lists || [];
+    return buildInitialData(todoData);
+  }, [toolOutput]);
+  
   const [data, setData] = useState(initialData);
 
   useEffect(() => {
     injectDatepickerStylesOnce();
   }, []);
+  
+  // Update data when tool output changes (e.g., when server sends new data)
+  useEffect(() => {
+    if (toolOutput) {
+      const todoData = toolOutput.todos || toolOutput.lists || [];
+      const newData = buildInitialData(todoData);
+      setData(newData);
+    }
+  }, [toolOutput]);
+  
+  // Update widget state when data changes
+  useEffect(() => {
+    const totalTodos = data.lists.reduce((sum, list) => sum + list.todos.length, 0);
+    setWidgetState(prev => ({
+      ...prev,
+      lastUpdated: new Date().toISOString(),
+      totalTodos
+    }));
+  }, [data]); // Remove setWidgetState from dependencies to prevent infinite loop
 
   // index of the currently opened list, or null
   const initialOpenIndex = useMemo(() => {
@@ -810,9 +869,9 @@ export function App() {
 
   const [rowRefs, setRowRefs] = useState({}); // index -> ref
 
-  const registerRowRef = (index, rowRef) => {
+  const registerRowRef = useCallback((index, rowRef) => {
     setRowRefs((prev) => ({ ...prev, [index]: rowRef }));
-  };
+  }, []);
 
   // If we default-opened a list via isCurrentlyOpen, try to capture its row ref for ZoomViewer
   useEffect(() => {
@@ -822,7 +881,7 @@ export function App() {
         setCurrentTodoListRef(r);
       }
     }
-  }, [currentTodoList, currentTodoListRef, rowRefs]);
+  }, [currentTodoList, currentTodoListRef]);
 
   const todoLists = data.lists;
   const currentList = currentTodoList != null ? todoLists[currentTodoList] : null;
@@ -926,6 +985,62 @@ export function App() {
       return { lists };
     });
   };
+  
+  // NEW: Interactive features using window.openai API
+  
+  /**
+   * Send a follow-up message to ChatGPT when all todos are completed
+   * This demonstrates how to communicate back to ChatGPT from the component
+   */
+  const checkAndNotifyCompletion = useCallback(async () => {
+    if (!currentList) return;
+    
+    const completedTodos = currentList.todos.filter(todo => todo.isComplete);
+    const totalTodos = currentList.todos.length;
+    
+    if (totalTodos > 0 && completedTodos.length === totalTodos) {
+      try {
+        await sendFollowUpMessage(
+          `🎉 I've completed all ${totalTodos} tasks in "${currentList.title}"! The todo list is now empty.`
+        );
+      } catch (error) {
+        console.error('Failed to send follow-up message:', error);
+      }
+    }
+  }, [currentList, sendFollowUpMessage]);
+  
+  /**
+   * Request fullscreen mode for better todo management
+   * This demonstrates how to request layout changes
+   */
+  const goFullscreen = useCallback(async () => {
+    try {
+      const result = await requestDisplayMode('fullscreen');
+      console.log('Display mode changed to:', result.mode);
+    } catch (error) {
+      console.error('Failed to request fullscreen:', error);
+    }
+  }, [requestDisplayMode]);
+  
+  /**
+   * Refresh todos from server (if server supports it)
+   * This demonstrates how to call server tools from the component
+   */
+  const refreshFromServer = useCallback(async () => {
+    try {
+      await callTool('refresh-todos', { 
+        listId: currentList?.id,
+        userId: toolInput?.userId 
+      });
+    } catch (error) {
+      console.error('Failed to refresh from server:', error);
+    }
+  }, [callTool, currentList, toolInput]);
+  
+  // Check for completion when todos change
+  useEffect(() => {
+    checkAndNotifyCompletion();
+  }, [checkAndNotifyCompletion]);
 
   return (
     <div className="my-5 antialiased">
@@ -950,6 +1065,36 @@ export function App() {
                 className="cursor-pointer"
               />
               <div className="flex-auto" />
+              
+              {/* NEW: Interactive buttons demonstrating window.openai API */}
+              {currentList && (
+                <div className="flex items-center gap-2 mr-2">
+                  {/* Theme indicator */}
+                  <div className={`text-xs px-2 py-1 rounded ${theme === 'dark' ? 'bg-gray-700 text-white' : 'bg-gray-200 text-gray-700'}`}>
+                    {theme}
+                  </div>
+                  
+                  {/* Refresh button */}
+                  <button
+                    onClick={refreshFromServer}
+                    disabled={isServerLoading}
+                    className="text-xs px-2 py-1 rounded bg-blue-100 text-blue-700 hover:bg-blue-200 disabled:opacity-50"
+                    title="Refresh from server"
+                  >
+                    {isServerLoading ? '...' : '↻'}
+                  </button>
+                  
+                  {/* Fullscreen button */}
+                  <button
+                    onClick={goFullscreen}
+                    className="text-xs px-2 py-1 rounded bg-green-100 text-green-700 hover:bg-green-200"
+                    title="Go fullscreen"
+                  >
+                    ⛶
+                  </button>
+                </div>
+              )}
+              
               <Plus size={20} onClick={currentList ? addTodo : addList} className="cursor-pointer" />
             </div>
 
@@ -964,6 +1109,15 @@ export function App() {
             >
               <div className="p-5">
                 <h1 className="font-medium text-2xl tracking-tight">My Lists</h1>
+                
+                {/* NEW: Debug information showing window.openai integration */}
+                {process.env.NODE_ENV === 'development' && (
+                  <div className="mt-2 text-xs text-gray-500 space-y-1">
+                    <div>Widget State: {widgetState.totalTodos} todos, last updated {new Date(widgetState.lastUpdated).toLocaleTimeString()}</div>
+                    <div>Display Mode: {displayMode} | Max Height: {maxHeight}px</div>
+                    <div>Tool Input: {toolInput ? JSON.stringify(toolInput).substring(0, 50) + '...' : 'None'}</div>
+                  </div>
+                )}
               </div>
               {todoLists.map((list, idx) => (
                 <TodoListGroup
