@@ -1,7 +1,13 @@
 {
   "name": "openai-mcp-app-boilerplate",
   "version": "1.0.0",
+  "description": "A clean, minimal boilerplate for building ChatGPT Apps using the Model Context Protocol (MCP)",
   "private": true,
+  "author": "Nestor Villalobos",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/nestorvc/openai-mcp-app-boilerplate.git"
+  },
   "scripts": {
     "build": "cd web && pnpm run build",
     "dev": "cd web && pnpm run dev",

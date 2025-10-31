@@ -1,5 +1,7 @@
 # OpenAI MCP App Boilerplate
 
+> **Note:** This is a community-maintained boilerplate based on OpenAI's MCP app examples. Includes custom hooks and enhanced documentation for the `window.openai` API.
+
 A clean, minimal boilerplate for building ChatGPT Apps using the Model Context Protocol (MCP).
 
 ## Overview
