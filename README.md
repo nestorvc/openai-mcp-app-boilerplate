@@ -214,7 +214,7 @@ pnpm run server
 **To test with ChatGPT:**
 1. Build production assets: `pnpm run build`
 2. Start MCP server: `pnpm run server`
-3. Use tunnel (ngrok) to expose `localhost:8000`
+3. Use tunnel (ngrok, Cloudfare or others) to expose `localhost:8000`
 
 ## Creating New Widgets
 
